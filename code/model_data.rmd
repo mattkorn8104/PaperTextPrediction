@@ -1,0 +1,109 @@
+---
+title: "Model Data"
+date: "`r Sys.Date()`"
+editor_options:
+  chunk_output_type: console
+output: pdf_document
+---
+
+# Load libraries
+
+```{r}
+rm(list=ls())
+options (scipen = 999)
+```
+
+# Load data
+
+`load_loans.R` was copied from https://github.com/KivaAnalysis/data.
+Use a direct link when that repo goes public.
+
+```{r}
+source('./load_loans.R')
+data <- load_loans('../data/loans')
+rm(load_loans)
+```
+
+# Overall Ranges
+
+Calculate any range we want over the full dataset.
+
+```{r}
+funded_percent <- 100 * xtabs(~data$status)/nrow(data)
+funded_percent <- unname(funded_percent['funded'])
+```
+
+# Filter Columns
+
+Keep only the columns of concern.
+
+```{r}
+my_vars <- c('use', 'description', 'status', 'fundraisingDate', 'raisedDate')
+data <- data[,my_vars]
+rm(my_vars)
+```
+
+# Filter Rows
+
+We are not concerned with whether or not an individual loan gets funded.
+This is because the overall funding rate for Kiva is so high (~`r round(funded_percent, 1)`%).
+
+```{r}
+data <- data[data$status == 'funded',]
+```
+
+Instead it is more appropriate for the target to be the speed at which funding occurs.
+
+# QA
+
+Filter out observations where we can not calculate our target.
+
+* Missing dates
+* Dates out of order
+
+```{r}
+data <- data[!is.na(data$fundraisingDate),]
+data <- data[!is.na(data$raisedDate),]
+data <- data[data$fundraisingDate <= data$raisedDate,]
+```
+
+# Calculated Columns
+
+Calculate the _median_ funding time and use that as the split target
+
+```{r}
+data$tte <- as.numeric(as.duration(data$raisedDate - data$fundraisingDate))
+funded_tte <- quantile(data$tte, probs = c(.50, .95))
+data$target <- data$tte > unname(funded_tte['50%'])
+```
+
+# Summary statistics
+
+Collect some summary stats for use throughout the paper.
+
+```{r}
+funded_min_date <- date(min(data$fundraisingDate))
+funded_max_date <- date(max(data$fundraisingDate))
+funded_total_loans <- nrow(data)
+```
+
+# Save
+
+Save the working measures + target as well as the summary stats
+
+```{r}
+data$status <- NULL
+data$fundraisingDate <- NULL
+data$raisedDate <- NULL
+data$tte <- NULL
+
+write.csv(data, file = '../data/measures.csv', row.names = F)
+
+save(
+  funded_percent,
+  funded_min_date,
+  funded_max_date,
+  funded_total_loans,
+  funded_tte,
+  file = '../results/model_data.RData')
+```
